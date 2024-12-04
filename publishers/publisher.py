@@ -1,9 +1,10 @@
-import pickle
 import socket
+import pickle
 import random
 import time
 
-# List of stock symbols and their random price ranges
+
+# Predefined stock symbols with random price ranges
 STOCKS = {
     "AAPL": (150, 200),
     "GOOGL": (2700, 3000),
@@ -12,13 +13,25 @@ STOCKS = {
     "AMZN": (3100, 3500),
 }
 
-PUBLISHER_IP = "18.117.254.115"  # Replace with the Publisher's IP
-PUBLISHER_PORT = 6000           # Publisher's port
 
-
-def generate_stock_data():
+def setup_server():
     """
-    Generate random stock data for predefined symbols.
+    Sets up the Publisher server to listen for incoming connections.
+    """
+    try:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("0.0.0.0", 6000))  # Bind to all interfaces on port 6000
+        server.listen(5)  # Allow up to 5 simultaneous connections
+        print("Publisher is running and waiting for connections...")
+        return server
+    except Exception as e:
+        print(f"Error setting up server: {e}")
+        exit()
+
+
+def generate_random_stock_data():
+    """
+    Generates random stock data for predefined symbols.
     Returns a dictionary with stock symbol and price information.
     """
     stock_data = {}
@@ -32,46 +45,39 @@ def generate_stock_data():
     return stock_data
 
 
-def send_stock_data(client, stock_data):
+def send_stock_data_to_client(client_socket):
     """
-    Send stock data to the Publisher.
+    Sends randomly generated stock data to the connected client.
     """
     try:
-        for symbol, data in stock_data.items():
-            # Prepare the data packet
-            packet = {"action": "publish", "topic": symbol, "content": data}
-            print(f"Sending data to Publisher: {packet}")
-            client.send(pickle.dumps(packet))
-            time.sleep(1)  # Send each stock update with a delay
+        while True:
+            # Generate stock data
+            stock_data = generate_random_stock_data()
+            print("pub: ", stock_data)
+            for symbol, data in stock_data.items():
+                # Create the data packet
+                packet = {"action": "publish", "topic": symbol, "content": data}
+                print(f"Sending data to client: {packet}")
+                # Serialize and send data
+                client_socket.send(pickle.dumps(packet))
+                time.sleep(1)  # Send one update per second
     except Exception as e:
-        print(f"Error sending stock data: {e}")
+        print(f"Error sending data to client: {e}")
+    finally:
+        client_socket.close()
+        print("Client disconnected.")
 
-
-def main():
-    """
-    Main function to connect to the Publisher and send stock data periodically.
-    """
-    while True:
-        try:
-            # Connect to the Publisher
-            print(f"Connecting to Publisher at {PUBLISHER_IP}:{PUBLISHER_PORT}...")
-            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client.connect((PUBLISHER_IP, PUBLISHER_PORT))
-            print("Connected to Publisher successfully!")
-
-            # Generate and send stock data
-            while True:
-                stock_data = generate_stock_data()
-                send_stock_data(client, stock_data)
-
-        except Exception as e:
-            print(f"Connection error: {e}")
-            print("Retrying in 5 seconds...")
-            time.sleep(5)
-
-        finally:
-            client.close()
-            print("Disconnected from Publisher. Retrying...")
 
 if __name__ == "__main__":
-    main()
+    server = setup_server()
+    try:
+        while True:
+            # Accept new client connections
+            client_socket, addr = server.accept()
+            print(f"Connection established with {addr}")
+            # Send random stock data to the connected client
+            send_stock_data_to_client(client_socket)
+    except KeyboardInterrupt:
+        print("Shutting down server...")
+    finally:
+        server.close()
