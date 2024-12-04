@@ -1,46 +1,49 @@
 import socket
-import tkinter as tk
 import pickle
 
 
-def publish_message():
-    topic = topic_entry.get()
-    message = message_entry.get()
-    if topic and message:
-        try:
-            data = {"action": "publish", "topic": topic, "content": message}
-            client.send(pickle.dumps(data))
-            status_label.config(text=f"Message published to topic '{topic}'")
-        except Exception as e:
-            status_label.config(text=f"Error publishing message: {e}")
-
-
-def setup_client():
-    global client
+def setup_server():
+    """
+    Sets up a server socket to listen for incoming stock data.
+    """
     try:
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(("127.0.0.1", 6000))  # Use correct port (6000)
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("0.0.0.0", 6000))  # Bind to all available interfaces on port 6000
+        server.listen(5)
+        print("Publisher is running and waiting for connections...")
+        return server
     except Exception as e:
-        print(f"Error connecting to broker: {e}")
+        print(f"Error setting up server: {e}")
         exit()
 
 
+def receive_stock_data(client_socket):
+    """
+    Receives stock data from the feeder and prints it to the terminal.
+    """
+    try:
+        while True:
+            data = client_socket.recv(4096)
+            if not data:
+                break
+            stock_info = pickle.loads(data)
+            print(f"Received Stock Data: {stock_info}")
+    except Exception as e:
+        print(f"Error receiving data: {e}")
+    finally:
+        client_socket.close()
+        print("Client disconnected.")
+
+
 if __name__ == "__main__":
-    setup_client()
+    server = setup_server()
+    try:
+        while True:
+            client_socket, addr = server.accept()
+            print(f"Connection established with {addr}")
+            receive_stock_data(client_socket)
+    except KeyboardInterrupt:
+        print("Shutting down server...")
+    finally:
+        server.close()
 
-    root = tk.Tk()
-    root.title("Publisher")
-
-    tk.Label(root, text="Topic:").pack()
-    topic_entry = tk.Entry(root)
-    topic_entry.pack()
-
-    tk.Label(root, text="Message:").pack()
-    message_entry = tk.Entry(root)
-    message_entry.pack()
-
-    tk.Button(root, text="Publish", command=publish_message).pack()
-    status_label = tk.Label(root, text="")
-    status_label.pack()
-
-    root.mainloop()
