@@ -7,9 +7,12 @@ import pickle
 def subscribe_to_topic():
     topic = topic_entry.get()
     if topic:
-        data = {"action": "subscribe", "topic": topic}
-        client.send(pickle.dumps(data))
-        status_label.config(text=f"Subscribed to topic '{topic}'")
+        try:
+            data = {"action": "subscribe", "topic": topic}
+            client.send(pickle.dumps(data))
+            status_label.config(text=f"Subscribed to topic '{topic}'")
+        except Exception as e:
+            status_label.config(text=f"Error subscribing to topic: {e}")
 
 
 def receive_messages():
@@ -19,16 +22,22 @@ def receive_messages():
             if not data:
                 break
             message = pickle.loads(data)
+            print(f"Received message: {message}")  # Debugging
             display_area.insert(tk.END, f"[{message['topic']}] {message['content']}\n")
-        except:
+        except Exception as e:
+            print(f"Error receiving message: {e}")
             break
 
 
 def setup_client():
     global client
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(("127.0.0.1", 5000))
-    threading.Thread(target=receive_messages, daemon=True).start()
+    try:
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect(("127.0.0.1", 6000))  # Use correct port (6000)
+        threading.Thread(target=receive_messages, daemon=True).start()
+    except Exception as e:
+        print(f"Error connecting to broker: {e}")
+        exit()
 
 
 if __name__ == "__main__":

@@ -4,62 +4,56 @@ import pickle
 
 
 class Broker:
-    def __init__(self, host, port):
+    def __init__(self, host="127.0.0.1", port=6000):
         self.host = host
         self.port = port
-        self.topics = {}  # {topic: [subscriber_socket1, subscriber_socket2, ...]}
-        self.lock = threading.Lock()
+        self.topics = {}  # Topic-to-subscriber mapping
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind((self.host, self.port))
+        self.server.listen(5)
+        print(f"Broker running on {self.host}:{self.port}")
 
-    def handle_client(self, client_socket, client_address):
-        print(f"New connection from {client_address}")
-        try:
-            while True:
-                data = client_socket.recv(1024)
+    def handle_client(self, conn, addr):
+        print(f"Connected to {addr}")
+        while True:
+            try:
+                data = conn.recv(1024)
                 if not data:
                     break
-
                 message = pickle.loads(data)
-                action = message.get("action")
-                if action == "subscribe":
-                    self.subscribe(client_socket, message["topic"])
-                elif action == "publish":
-                    self.publish(message["topic"], message["content"])
-        except:
-            print(f"Connection with {client_address} closed.")
-        finally:
-            client_socket.close()
+                self.process_message(message, conn)
+            except Exception as e:
+                print(f"Error handling client {addr}: {e}")
+                break
+        conn.close()
+        print(f"Disconnected from {addr}")
 
-    def subscribe(self, client_socket, topic):
-        with self.lock:
+    def process_message(self, message, conn):
+        action = message.get("action")
+        topic = message.get("topic")
+        if action == "subscribe":
             if topic not in self.topics:
                 self.topics[topic] = []
-            self.topics[topic].append(client_socket)
-        print(f"Client subscribed to topic: {topic}")
-
-    def publish(self, topic, content):
-        with self.lock:
+            self.topics[topic].append(conn)
+            print(f"Subscriber added to topic '{topic}'")
+        elif action == "publish":
             if topic in self.topics:
-                message = {"topic": topic, "content": content}
-                data = pickle.dumps(message)
-                for subscriber in self.topics[topic]:
+                for subscriber in list(self.topics[topic]):  # Use list to avoid issues when removing items
                     try:
-                        subscriber.send(data)
-                    except:
-                        print("Failed to send message to subscriber.")
+                        subscriber.send(pickle.dumps(message))
+                    except Exception as e:
+                        print(f"Failed to send to subscriber, removing: {e}")
+                        self.topics[topic].remove(subscriber)  # Clean up disconnected subscribers
+                print(f"Message published to topic '{topic}': {message['content']}")
             else:
-                print(f"No subscribers for topic: {topic}")
+                print(f"No subscribers for topic '{topic}'")
 
     def start(self):
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind((self.host, self.port))
-        server.listen(5)
-        print(f"Broker started on {self.host}:{self.port}")
-
         while True:
-            client_socket, client_address = server.accept()
-            threading.Thread(target=self.handle_client, args=(client_socket, client_address), daemon=True).start()
+            conn, addr = self.server.accept()
+            threading.Thread(target=self.handle_client, args=(conn, addr)).start()
 
 
 if __name__ == "__main__":
-    broker = Broker("127.0.0.1", 8000)
+    broker = Broker()
     broker.start()

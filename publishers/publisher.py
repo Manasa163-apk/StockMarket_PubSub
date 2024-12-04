@@ -7,15 +7,22 @@ def publish_message():
     topic = topic_entry.get()
     message = message_entry.get()
     if topic and message:
-        data = {"action": "publish", "topic": topic, "content": message}
-        client.send(pickle.dumps(data))
-        status_label.config(text=f"Message published to topic '{topic}'")
+        try:
+            data = {"action": "publish", "topic": topic, "content": message}
+            client.send(pickle.dumps(data))
+            status_label.config(text=f"Message published to topic '{topic}'")
+        except Exception as e:
+            status_label.config(text=f"Error publishing message: {e}")
 
 
 def setup_client():
     global client
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(("127.0.0.1", 5000))
+    try:
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect(("127.0.0.1", 6000))  # Use correct port (6000)
+    except Exception as e:
+        print(f"Error connecting to broker: {e}")
+        exit()
 
 
 if __name__ == "__main__":

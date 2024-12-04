@@ -70,7 +70,7 @@ The broker will start on `127.0.0.1:5000` by default.
 
 Launch the publisher to send messages:
 ```bash
-python publisher.py
+python3 publisher.py
 ```
 
 **Steps**:
@@ -82,7 +82,7 @@ python publisher.py
 
 Launch the subscriber to receive messages:
 ```bash
-python subscriber.py
+python3 subscriber.py
 ```
 
 **Steps**:
@@ -96,7 +96,7 @@ python subscriber.py
 
 1. **Start the Broker**:
    ```bash
-   python broker.py
+   python3 broker.py
    ```
 
 2. **Run a Subscriber**:
@@ -135,7 +135,7 @@ Message published to topic: stocks
 ## Troubleshooting
 
 ### 1. Ports Already in Use
-If the port `5000` is busy, modify the broker code to use a different port:
+If the port `8000` is busy, modify the broker code to use a different port:
 ```python
 broker = Broker("127.0.0.1", <NEW_PORT>)
 ```
