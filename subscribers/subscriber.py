@@ -11,7 +11,9 @@ class Subscriber:
         """Subscribe to a topic and print updates."""
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                print(f"Connecting to broker at {self.broker_host}:{self.broker_port}...")
                 s.connect((self.broker_host, self.broker_port))
+                print(f"Connected. Subscribing to topic '{topic}'...")
                 data = {"action": "subscribe", "topic": topic.lower()}
                 s.send(pickle.dumps(data))
                 while True:
@@ -24,5 +26,6 @@ class Subscriber:
 
 
 if __name__ == "__main__":
-    subscriber = Subscriber("localhost", 2000)
+    subscriber = Subscriber("localhost", 2001)
     subscriber.subscribe("stocks")
+    

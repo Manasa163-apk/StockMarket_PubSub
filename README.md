@@ -122,7 +122,7 @@
 
 4. **Start Publisher**:
    ```bash
-   cd subscribers
+   cd publishers
    python3 publisher.py
    ```
    Enter a topic and message, and the message will be sent to the broker and broadcasted to all subscribers.

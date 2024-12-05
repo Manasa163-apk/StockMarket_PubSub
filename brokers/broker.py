@@ -82,8 +82,6 @@ class Broker:
                     self.handle_subscribe(request, conn)
                 elif action == "sync":
                     self.handle_sync(request)
-                elif action == "add_peer":  # adding peers
-                    self.handle_add_peer(request)
         except Exception as e:
             print(f"Error handling client {addr}: {e}")
         finally:
@@ -91,7 +89,7 @@ class Broker:
 
     def handle_publish(self, request):
         """Handle publishing a new topic/message."""
-        topic = request.get("topic").lower()  # Normalize topic to lowercase
+        topic = request.get("topic").lower()
         message = request.get("message")
 
         if topic not in self.topics or self.topics[topic] != message:
@@ -121,64 +119,68 @@ class Broker:
     def handle_subscribe(self, request, conn):
         """Handle subscriber's subscription request."""
         topic = request.get("topic").lower()
+        print(f"Received subscription request for topic '{topic}'.")
 
         if topic not in self.subscribers:
             self.subscribers[topic] = []
 
         self.subscribers[topic].append(conn)
+        print(f"Added subscriber for topic '{topic}'. Total subscribers: {len(self.subscribers[topic])}")
 
+        # Send the latest message for the topic
         message = self.topics.get(topic)
         if message is None:
             conn.send(pickle.dumps({"topic": topic, "message": "No messages yet."}))
+            print(f"No messages for topic '{topic}'. Sent 'No messages yet.' to subscriber.")
         else:
             conn.send(pickle.dumps({"topic": topic, "message": message}))
+            print(f"Sent latest message for topic '{topic}': {message}")
 
     def notify_subscribers(self, topic, message):
         """Notify all subscribers of a new message on a topic."""
         if topic not in self.subscribers or not self.subscribers[topic]:
+            print(f"No subscribers to notify for topic '{topic}'.")
             return
         for subscriber in self.subscribers[topic]:
             try:
+                print(f"Notifying subscriber for topic '{topic}' with message: {message}")
                 subscriber.send(pickle.dumps({"topic": topic, "message": message}))
-            except Exception:
+            except Exception as e:
+                print(f"Failed to notify subscriber: {e}")
                 self.subscribers[topic].remove(subscriber)
 
     def handle_sync(self, request):
-        """Merge state received from another broker."""
+        """Merge state received from another broker and notify subscribers."""
         peer_topics = request.get("topics")
+        print(f"Received sync request: {peer_topics}")  # Debug log
         for topic, message in peer_topics.items():
             topic = topic.lower()
             if topic not in self.topics or self.topics[topic] != message:
                 self.topics[topic] = message
                 self.save_to_database(topic, message)
+                print(f"Updated topic '{topic}' with message '{message}' from gossip.")  # Debug log
+                # Notify subscribers of the updated message
+                self.notify_subscribers(topic, message)
 
     def gossip_protocol(self):
-    # """Periodically gossip with random peers."""
+        """Periodically gossip with random peers."""
         while True:
             if not self.peers:
-               print("No peers available for gossip.")  # Debug log
-               time.sleep(5)
-               continue
+                print("No peers available for gossip.")
+                time.sleep(5)
+                continue
 
             peer = random.choice(self.peers)
             try:
+                print(f"Attempting to gossip with peer {peer}...")
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(5)
                     s.connect(peer)
                     s.send(pickle.dumps({"action": "sync", "topics": self.topics}))
-                    print(f"Gossiped with peer {peer}.")  # Debug log
+                    print(f"Successfully gossiped with peer {peer}.")
             except Exception as e:
-                print(f"Gossip failed with peer {peer}: {e}")  # Debug log
-            time.sleep(5)
-    
-    def handle_add_peer(self, request):
-        """Handle adding a new peer to the broker."""
-        new_peer = (request.get("host"), request.get("port"))
-        if new_peer not in self.peers:
-            self.peers.append(new_peer)
-            print(f"Added new peer: {new_peer}")
-        else:
-            print(f"Peer {new_peer} already exists.")
+                print(f"Gossip failed with peer {peer}: {e}")
+            time.sleep(1)
 
 
 if __name__ == "__main__":
