@@ -1,6 +1,7 @@
 import socket
-import pickle
+import json
 import time
+import argparse
 
 
 class Publisher:
@@ -12,17 +13,23 @@ class Publisher:
         """Publish a message to a topic."""
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                print(f"Connecting to broker at {self.broker_host}:{self.broker_port}...")
                 s.connect((self.broker_host, self.broker_port))
-                data = {"action": "publish", "topic": topic.lower(), "message": message}
-                s.send(pickle.dumps(data))
+                print(f"Connected. Publishing to topic '{topic}'...")
+                data = {"type": "publish", "topic": topic.lower(), "message": message}
+                s.send(json.dumps(data).encode('utf-8'))  # Send data as JSON string
         except Exception as e:
             print(f"Error publishing message: {e}")
 
 
 if __name__ == "__main__":
-    publisher = Publisher("localhost", 2000)
-    while True:
-        topic = "stocks"
-        message = f"Stock update at {time.ctime()}"
-        publisher.publish(topic, message)
-        time.sleep(1)  # Adjust for real-time stock data frequency
+    parser = argparse.ArgumentParser(description="Run the Publisher client.")
+    parser.add_argument('--host', type=str, required=True, help="Broker host address (e.g., 'localhost').")
+    parser.add_argument('--port', type=int, required=True, help="Broker port number (e.g., 2000).")
+    parser.add_argument('--topic', type=str, default="stocks", help="Topic to publish to (default: 'stocks').")
+    
+    args = parser.parse_args()
+
+    publisher = Publisher(args.host, args.port)
+    message = f"Stock update at {time.ctime()}"
+    publisher.publish(args.topic, message)

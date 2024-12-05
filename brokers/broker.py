@@ -1,198 +1,277 @@
 import socket
 import threading
-import pickle
+import json
 import sqlite3
+import argparse
 import time
-import random
 
 
 class Broker:
-    def __init__(self, host, port, peers):
+    def __init__(self, host, port, global_state_file):
         self.host = host
         self.port = port
-        self.peers = [(peer.split(":")[0], int(peer.split(":")[1])) for peer in peers]
+        self.peers = self.load_peers(global_state_file)
         self.topics = {}  # topic -> latest message
         self.subscribers = {}  # topic -> list of subscriber connections
+        self.isCoordinator = False  # Leader election flag
+        self.coordinator = None  # Tracks the current coordinator
         self.db_file = "broker.db"  # SQLite database file
         self.init_database()
+
+        # Trigger leader election upon deployment
+        threading.Thread(target=self.initiate_election, daemon=True).start()
+
+    def load_peers(self, global_state_file):
+        """Load peers from the provided CSV file."""
+        peers = []
+        try:
+            with open(global_state_file, 'r') as file:
+                lines = file.readlines()
+                for line in lines[1:]:  # Skip the header
+                    ip, port = line.strip().split(',')
+                    if (ip, int(port)) != (self.host, self.port):  # Avoid adding itself
+                        peers.append((ip, int(port)))
+        except Exception as e:
+            print(f"Error loading peers from {global_state_file}: {e}")
+        return peers
 
     def init_database(self):
         """Initialize the database for storing topics and messages."""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS topics (
                     topic TEXT PRIMARY KEY,
                     latest_message TEXT
                 )
-            """
-            )
+            """)
             conn.commit()
             conn.close()
-            print("Database initialized successfully.")
+            print("Database initialized.")
         except Exception as e:
-            print(f"Error initializing database: {e}")
+            print(f"Database initialization failed: {e}")
 
-    def load_from_database(self):
-        """Load topics and messages from the database into memory."""
-        try:
-            conn = sqlite3.connect(self.db_file)
-            cursor = conn.cursor()
-            cursor.execute("SELECT topic, latest_message FROM topics")
-            for topic, message in cursor.fetchall():
-                self.topics[topic.lower()] = message  # Normalize to lowercase
-            conn.close()
-            print("Topics loaded from database.")
-        except Exception as e:
-            print(f"Error loading from database: {e}")
+    def initiate_election(self):
+        """Initiate the leader election process."""
+        print(f"Broker at {self.host}:{self.port} initiating election.")
+        higher_priority_peers = [
+            peer for peer in self.peers
+            if (peer[0], peer[1]) > (self.host, self.port)
+        ]
 
-    def start(self):
-        """Start the broker server."""
-        self.load_from_database()
-        print(f"Starting broker at {self.host}:{self.port}")
-        try:
-            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server.bind((self.host, self.port))
-            server.listen(5)
-            print(f"Broker is listening on {self.host}:{self.port}")
+        responses = []
 
-            threading.Thread(target=self.gossip_protocol, daemon=True).start()
+        def send_election(peer):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect(peer)
+                message = {"type": "election", "sender": (self.host, self.port)}
+                s.send(json.dumps(message).encode('utf-8'))
+                s.settimeout(5)
+                response = s.recv(1024)
+                responses.append(json.loads(response.decode('utf-8')))
+                s.close()
+            except Exception as e:
+                print(f"Failed to communicate with peer {peer}: {e}")
 
-            while True:
-                conn, addr = server.accept()
-                print(f"Connection established with {addr}")
-                threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
-        except Exception as e:
-            print(f"Error starting the broker: {e}")
+        # Send election messages to higher-priority peers
+        threads = []
+        for peer in higher_priority_peers:
+            thread = threading.Thread(target=send_election, args=(peer,))
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        if not responses:
+            # No responses, elect self as coordinator
+            self.announce_coordinator()
+        else:
+            print(f"Broker at {self.host}:{self.port} waiting for a coordinator.")
+
+    def announce_coordinator(self):
+        """Announce that this broker is the new coordinator."""
+        print(f"Broker at {self.host}:{self.port} is the new coordinator.")
+        self.isCoordinator = True
+        self.coordinator = (self.host, self.port)
+
+        # Notify all peers
+        for peer in self.peers:
+            self.send_message(peer, {
+                "type": "coordinator",
+                "sender": (self.host, self.port),
+            })
 
     def handle_client(self, conn, addr):
-        """Handle client (publisher or subscriber) requests."""
-        try:
-            while True:
+        """Handle incoming client connections."""
+        print(f"Connected to {addr}")
+        while True:
+            try:
                 data = conn.recv(1024)
                 if not data:
                     break
-                request = pickle.loads(data)
-                action = request.get("action")
-                if action == "publish":
-                    self.handle_publish(request)
-                elif action == "subscribe":
-                    self.handle_subscribe(request, conn)
-                elif action == "sync":
-                    self.handle_sync(request)
-        except Exception as e:
-            print(f"Error handling client {addr}: {e}")
-        finally:
-            conn.close()
+                message = json.loads(data.decode('utf-8'))
+                self.process_message(message, conn)
+            except Exception as e:
+                print(f"Error handling client {addr}: {e}")
+                break
+        conn.close()
+        print(f"Disconnected from {addr}")
 
-    def handle_publish(self, request):
-        """Handle publishing a new topic/message."""
-        topic = request.get("topic").lower()
-        message = request.get("message")
+    def process_message(self, message, conn):
+        """Process incoming messages based on their type."""
+        message_type = message.get("type")
 
-        if topic not in self.topics or self.topics[topic] != message:
-            self.topics[topic] = message
-            self.save_to_database(topic, message)
-            print(f"Published topic '{topic}' with message '{message}'")
-            self.notify_subscribers(topic, message)
+        if message_type == "publish":
+            self.handle_publish_message(message, conn)
+        elif message_type == "subscribe":
+            self.handle_subscribe_message(message, conn)
+        elif message_type == "gossip":
+            self.handle_gossip_message(message)
+        elif message_type == "election":
+            self.handle_election_message(message, conn)
+        elif message_type == "coordinator":
+            self.handle_coordinator_message(message)
 
-    def save_to_database(self, topic, message):
-        """Save the latest message for a topic to the database."""
+    def handle_election_message(self, message, conn):
+        """Handle election messages."""
+        sender = message.get("sender")
+        print(f"Received election message from {sender}")
+
+        # Acknowledge receipt of the election message
+        response = {"type": "election_ack", "ack": True}
+        conn.send(json.dumps(response).encode('utf-8'))
+
+        # If the sender has lower priority, initiate a new election
+        if self.is_higher_priority(sender):
+            self.initiate_election()
+
+    def handle_coordinator_message(self, message):
+        """Handle coordinator announcements."""
+        self.coordinator = message.get("sender")
+        print(f"New coordinator is {self.coordinator}")
+        self.isCoordinator = (self.coordinator == (self.host, self.port))
+
+    def handle_publish_message(self, message, conn):
+        """Handle publish requests."""
+        topic = message.get("topic")
+        msg = message.get("message")
+        self.topics[topic] = msg
+        self.update_database(topic, msg)
+
+        # Notify subscribers
+        if topic in self.subscribers:
+            for subscriber in self.subscribers[topic]:
+                try:
+                    subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg}).encode('utf-8'))
+                except Exception as e:
+                    print(f"Error notifying subscriber: {e}")
+
+        # Gossip this message to peers
+        self.gossip_message(topic, msg)
+
+    def handle_subscribe_message(self, message, conn):
+        """Handle subscription requests."""
+        topic = message.get("topic")
+        if topic not in self.subscribers:
+            self.subscribers[topic] = []
+        self.subscribers[topic].append(conn)
+        print(f"Subscriber added for topic: {topic}")
+
+    def handle_gossip_message(self, message):
+        """Handle gossip messages from other brokers."""
+        topic = message.get("topic")
+        msg = message.get("message")
+
+        # Check if the topic already exists in the database
+        if not self.is_message_in_database(topic, msg):
+            self.topics[topic] = msg
+            self.update_database(topic, msg)
+
+            # Notify subscribers
+            if topic in self.subscribers:
+                for subscriber in self.subscribers[topic]:
+                    try:
+                        subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg}).encode('utf-8'))
+                    except Exception as e:
+                        print(f"Error notifying subscriber: {e}")
+
+            # Gossip the message further
+            self.gossip_message(topic, msg)
+
+    def is_message_in_database(self, topic, message):
+        """Check if the topic and message already exist in the database."""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO topics (topic, latest_message)
+            cursor.execute("SELECT latest_message FROM topics WHERE topic = ?", (topic,))
+            row = cursor.fetchone()
+            conn.close()
+            return row is not None and row[0] == message
+        except Exception as e:
+            print(f"Database query failed: {e}")
+            return False
+
+    def update_database(self, topic, message):
+        """Update topic data in the database."""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO topics (topic, latest_message)
                 VALUES (?, ?)
-                ON CONFLICT(topic) DO UPDATE SET latest_message=excluded.latest_message
-            """,
-                (topic, message),
-            )
+            """, (topic, message))
             conn.commit()
             conn.close()
         except Exception as e:
-            print(f"Error saving to database: {e}")
+            print(f"Database update failed: {e}")
 
-    def handle_subscribe(self, request, conn):
-        """Handle subscriber's subscription request."""
-        topic = request.get("topic").lower()
-        print(f"Received subscription request for topic '{topic}'.")
+    def gossip_message(self, topic, message):
+        """Gossip a message to all peers."""
+        for peer in self.peers:
+            self.send_message(peer, {
+                "type": "gossip",
+                "topic": topic,
+                "message": message,
+            })
 
-        if topic not in self.subscribers:
-            self.subscribers[topic] = []
+    def send_message(self, peer, message):
+        """Send a message to a peer."""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(peer)
+            s.send(json.dumps(message).encode('utf-8'))
+            s.close()
+        except Exception as e:
+            print(f"Failed to send message to {peer}: {e}")
 
-        self.subscribers[topic].append(conn)
-        print(f"Added subscriber for topic '{topic}'. Total subscribers: {len(self.subscribers[topic])}")
+    def is_higher_priority(self, sender):
+        """Determine if this broker has higher priority than the sender."""
+        sender_host, sender_port = sender
+        return (self.host, self.port) > (sender_host, sender_port)
 
-        # Send the latest message for the topic
-        message = self.topics.get(topic)
-        if message is None:
-            conn.send(pickle.dumps({"topic": topic, "message": "No messages yet."}))
-            print(f"No messages for topic '{topic}'. Sent 'No messages yet.' to subscriber.")
-        else:
-            conn.send(pickle.dumps({"topic": topic, "message": message}))
-            print(f"Sent latest message for topic '{topic}': {message}")
+    def start(self):
+        """Start the broker server."""
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(('0.0.0.0', self.port))
+        server.listen(5)
+        print(f"Broker running on {self.host}:{self.port}")
 
-    def notify_subscribers(self, topic, message):
-        """Notify all subscribers of a new message on a topic."""
-        if topic not in self.subscribers or not self.subscribers[topic]:
-            print(f"No subscribers to notify for topic '{topic}'.")
-            return
-        for subscriber in self.subscribers[topic]:
-            try:
-                print(f"Notifying subscriber for topic '{topic}' with message: {message}")
-                subscriber.send(pickle.dumps({"topic": topic, "message": message}))
-            except Exception as e:
-                print(f"Failed to notify subscriber: {e}")
-                self.subscribers[topic].remove(subscriber)
-
-    def handle_sync(self, request):
-        """Merge state received from another broker and notify subscribers."""
-        peer_topics = request.get("topics")
-        print(f"Received sync request: {peer_topics}")  # Debug log
-        for topic, message in peer_topics.items():
-            topic = topic.lower()
-            if topic not in self.topics or self.topics[topic] != message:
-                self.topics[topic] = message
-                self.save_to_database(topic, message)
-                print(f"Updated topic '{topic}' with message '{message}' from gossip.")  # Debug log
-                # Notify subscribers of the updated message
-                self.notify_subscribers(topic, message)
-
-    def gossip_protocol(self):
-        """Periodically gossip with random peers."""
         while True:
-            if not self.peers:
-                print("No peers available for gossip.")
-                time.sleep(5)
-                continue
-
-            peer = random.choice(self.peers)
-            try:
-                print(f"Attempting to gossip with peer {peer}...")
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(5)
-                    s.connect(peer)
-                    s.send(pickle.dumps({"action": "sync", "topics": self.topics}))
-                    print(f"Successfully gossiped with peer {peer}.")
-            except Exception as e:
-                print(f"Gossip failed with peer {peer}: {e}")
-            time.sleep(1)
+            conn, addr = server.accept()
+            threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Broker for Pub-Sub system")
-    parser.add_argument("--host", type=str, required=True, help="Broker host address")
-    parser.add_argument("--port", type=int, required=True, help="Broker port number")
-    parser.add_argument(
-        "--peers", type=str, nargs="*", default=[], help="List of peer brokers (host:port)"
-    )
+    parser = argparse.ArgumentParser(description="Broker for publish-subscribe system with leader election.")
+    parser.add_argument("--host", type=str, required=True, help="Host IP address of the broker.")
+    parser.add_argument("--port", type=int, required=True, help="Port number of the broker.")
     args = parser.parse_args()
 
-    broker = Broker(args.host, args.port, args.peers)
+    GLOBAL_STATE_FILE = "globalState.csv"  # File containing peer information
+
+    broker = Broker(args.host, args.port, GLOBAL_STATE_FILE)
     broker.start()

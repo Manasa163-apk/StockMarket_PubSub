@@ -1,5 +1,6 @@
 import socket
-import pickle
+import json
+import argparse
 
 
 class Subscriber:
@@ -14,18 +15,24 @@ class Subscriber:
                 print(f"Connecting to broker at {self.broker_host}:{self.broker_port}...")
                 s.connect((self.broker_host, self.broker_port))
                 print(f"Connected. Subscribing to topic '{topic}'...")
-                data = {"action": "subscribe", "topic": topic.lower()}
-                s.send(pickle.dumps(data))
+                data = {"type": "subscribe", "topic": topic.lower()}
+                s.send(json.dumps(data).encode('utf-8'))  # Send data as JSON string
                 while True:
                     message_data = s.recv(1024)
                     if message_data:
-                        message = pickle.loads(message_data)
+                        message = json.loads(message_data.decode('utf-8'))  # Decode and parse JSON
                         print(f"Update on '{message['topic']}': {message['message']}")
         except Exception as e:
             print(f"Error subscribing to topic: {e}")
 
 
 if __name__ == "__main__":
-    subscriber = Subscriber("localhost", 2001)
-    subscriber.subscribe("stocks")
+    parser = argparse.ArgumentParser(description="Run the Subscriber client.")
+    parser.add_argument('--host', type=str, required=True, help="Broker host address (e.g., 'localhost').")
+    parser.add_argument('--port', type=int, required=True, help="Broker port number (e.g., 2001).")
+    parser.add_argument('--topic', type=str, default="stocks", help="Topic to subscribe to (default: 'stocks').")
     
+    args = parser.parse_args()
+    
+    subscriber = Subscriber(args.host, args.port)
+    subscriber.subscribe(args.topic)
