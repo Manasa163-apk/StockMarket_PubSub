@@ -153,6 +153,34 @@ class Broker:
                         self.initiate_election()  # Trigger a new election if the leader fails
             time.sleep(1)
 
+    def process_message(self, message, conn):
+        """Process incoming messages based on their type."""
+        message_type = message.get("type")
+        if message_type == "election":
+            self.handle_election_message(message, conn)
+        elif message_type == "coordinator":
+            self.handle_coordinator_message(message)
+        elif message_type == "heartbeat":
+            print(f"Heartbeat message received: {message}")
+        else:
+            print(f"Unknown message type: {message}")
+
+    def handle_client(self, conn, addr):
+        """Handle incoming client connections."""
+        print(f"Connected to {addr}")
+        while True:
+            try:
+                data = conn.recv(1024)
+                if not data:
+                    break
+                message = json.loads(data.decode('utf-8'))
+                self.process_message(message, conn)
+            except Exception as e:
+                print(f"Error handling client {addr}: {e}")
+                break
+        conn.close()
+        print(f"Disconnected from {addr}")
+
     def send_message(self, peer, message):
         """Send a message to a peer."""
         try:
@@ -178,22 +206,6 @@ class Broker:
         finally:
             self.running = False
             server.close()
-
-    def handle_client(self, conn, addr):
-        """Handle incoming client connections."""
-        print(f"Connected to {addr}")
-        while True:
-            try:
-                data = conn.recv(1024)
-                if not data:
-                    break
-                message = json.loads(data.decode('utf-8'))
-                self.process_message(message, conn)
-            except Exception as e:
-                print(f"Error handling client {addr}: {e}")
-                break
-        conn.close()
-        print(f"Disconnected from {addr}\n")
 
 
 if __name__ == "__main__":
