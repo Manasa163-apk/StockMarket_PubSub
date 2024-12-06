@@ -159,7 +159,7 @@ class Broker:
         """Handle publish requests."""
         topic = message.get("topic")
         msg = message.get("message")
-        print(f"New data has been published - {host}:{port} initiating gossip")
+        print(f"New data has been published - {self.host}:{self.port} initiating gossip")
         self.topics[topic] = msg
         self.update_database(topic, msg)
 
@@ -189,7 +189,7 @@ class Broker:
 
         # Check if the topic already exists in the database
         if not self.is_message_in_database(topic, msg):
-            print(f"New data has arrived through gossip - {host}:{port} forwarding gossip")
+            print(f"New data has arrived through gossip - {self.host}:{self.port} forwarding gossip")
             self.topics[topic] = msg
             self.update_database(topic, msg)
 
@@ -204,7 +204,7 @@ class Broker:
             # Gossip the message further
             self.gossip_message(topic, msg)
         else:
-            print(f"Data already stored in DB - {host}:{port} already received gossip")
+            print(f"Data already stored in DB - {self.host}:{self.port} already received gossip")
 
     def is_message_in_database(self, topic, message):
         """Check if the topic and message already exist in the database."""
