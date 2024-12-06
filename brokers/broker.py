@@ -153,6 +153,40 @@ class Broker:
                         self.initiate_election()  # Trigger a new election if the leader fails
             time.sleep(1)
 
-    # Rest of the methods remain unchanged...
-    # (e.g., handle_client, process_message, etc.)
+    def send_message(self, peer, message):
+        """Send a message to a peer."""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(peer)
+            s.send(json.dumps(message).encode('utf-8'))
+            s.close()
+        except Exception as e:
+            print(f"Failed to send message to {peer}: {e}")
 
+    def start(self):
+        """Start the broker server."""
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(('0.0.0.0', self.port))
+        server.listen(5)
+        print(f"Broker running on {self.host}:{self.port}")
+        try:
+            while True:
+                conn, addr = server.accept()
+                threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
+        except Exception as e:
+            print(f"{e}")
+        finally:
+            self.running = False
+            server.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Broker for publish-subscribe system with leader election.")
+    parser.add_argument("--host", type=str, required=True, help="Host IP address of the broker.")
+    parser.add_argument("--port", type=int, required=True, help="Port number of the broker.")
+    args = parser.parse_args()
+
+    GLOBAL_STATE_FILE = "globalState.csv"  # File containing peer information
+
+    broker = Broker(args.host, args.port, GLOBAL_STATE_FILE)
+    broker.start()
