@@ -257,16 +257,27 @@ class Broker:
         sender_host, sender_port = sender
         return (self.host, self.port) > (sender_host, sender_port)
 
+    def shutdown(self):
+        """Gracefully shut down the broker server."""
+        if self.server:
+            print(f"Shutting down the broker server at {host}:{port}...")
+            self.server.close()
+            sys.exit(0)
+
     def start(self):
         """Start the broker server."""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(('0.0.0.0', self.port))
         server.listen(5)
         print(f"Broker running on {self.host}:{self.port}")
-
-        while True:
-            conn, addr = server.accept()
-            threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
+        try:
+            while True:
+                conn, addr = server.accept()
+                threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
+        except Exception as e:
+            print(f"{e}")
+        finally:
+            self.shutdown()
 
 
 if __name__ == "__main__":
