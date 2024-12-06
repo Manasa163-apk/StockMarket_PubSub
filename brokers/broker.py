@@ -266,13 +266,6 @@ class Broker:
         sender_host, sender_port = sender
         return (self.host, self.port) > (sender_host, sender_port)
 
-    def shutdown(self):
-        """Gracefully shut down the broker server."""
-        if self.server:
-            print(f"Shutting down the broker server at {host}:{port}...")
-            self.server.close()
-            sys.exit(0)
-
     def start(self):
         """Start the broker server."""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -286,7 +279,10 @@ class Broker:
         except Exception as e:
             print(f"{e}")
         finally:
-            self.shutdown()
+            """Gracefully shut down the broker server."""
+            print(f"Shutting down the broker server at {host}:{port}...")
+            server.close()
+            sys.exit(0)
 
 
 if __name__ == "__main__":
