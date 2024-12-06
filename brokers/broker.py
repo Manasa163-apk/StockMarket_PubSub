@@ -4,7 +4,6 @@ import json
 import sqlite3
 import argparse
 import time
-import sys
 
 class Broker:
     def __init__(self, host, port, global_state_file):
