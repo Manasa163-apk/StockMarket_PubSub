@@ -89,7 +89,7 @@ class Broker:
         for thread in threads:
             thread.join()
 
-        print(f"Election messages sent to {len(higher_priority_peers)} peer(s) by {self.host}:{self.port}")
+        print(f"Election messages sent to {len(higher_priority_peers)} broker(s) by {self.host}:{self.port}")
         print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         if not responses:
             # No responses, elect self as coordinator
@@ -112,7 +112,7 @@ class Broker:
                 "lamport_timestamp": self.lamport_timestamp
             })
         
-        print(f"Notified all brokers about new coordinator.")
+        print(f"Notified {len(self.peers)} brokers about new coordinator.")
         print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
 
     def handle_client(self, conn, addr):
