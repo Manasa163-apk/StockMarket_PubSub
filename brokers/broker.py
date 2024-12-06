@@ -179,6 +179,22 @@ class Broker:
             self.running = False
             server.close()
 
+    def handle_client(self, conn, addr):
+        """Handle incoming client connections."""
+        print(f"Connected to {addr}")
+        while True:
+            try:
+                data = conn.recv(1024)
+                if not data:
+                    break
+                message = json.loads(data.decode('utf-8'))
+                self.process_message(message, conn)
+            except Exception as e:
+                print(f"Error handling client {addr}: {e}")
+                break
+        conn.close()
+        print(f"Disconnected from {addr}\n")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Broker for publish-subscribe system with leader election.")
