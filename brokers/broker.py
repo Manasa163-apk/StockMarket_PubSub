@@ -5,6 +5,9 @@ import sqlite3
 import argparse
 import time
 
+HEARTBEAT_INTERVAL = 2  # Seconds between sending heartbeats
+FAILURE_THRESHOLD = 5   # Seconds before detecting a failed peer
+
 
 class Broker:
     def __init__(self, host, port, global_state_file):
@@ -18,8 +21,14 @@ class Broker:
         self.db_file = "broker.db"  # SQLite database file
         self.init_database()
 
-        # Trigger leader election upon deployment
+        self.last_heartbeat = {peer: time.time() for peer in self.peers}  # Heartbeat tracking
+        self.running = True  # To control threads
+
+        # Trigger leader election and heartbeat mechanisms upon deployment
         threading.Thread(target=self.initiate_election, daemon=True).start()
+        threading.Thread(target=self.start_heartbeat_server, daemon=True).start()
+        threading.Thread(target=self.start_heartbeat_client, daemon=True).start()
+        threading.Thread(target=self.detect_failures, daemon=True).start()
 
     def load_peers(self, global_state_file):
         """Load peers from the provided CSV file."""
@@ -105,142 +114,44 @@ class Broker:
                 "sender": (self.host, self.port),
             })
 
-    def handle_client(self, conn, addr):
-        """Handle incoming client connections."""
-        print(f"Connected to {addr}")
-        while True:
+    def start_heartbeat_server(self):
+        """Listen for heartbeat messages from peers."""
+        server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        server.bind(("0.0.0.0", self.port))
+        print(f"Broker {self.host}:{self.port} listening for heartbeats on port {self.port}.")
+
+        while self.running:
             try:
-                data = conn.recv(1024)
-                if not data:
-                    break
-                message = json.loads(data.decode('utf-8'))
-                self.process_message(message, conn)
+                data, addr = server.recvfrom(1024)
+                message = data.decode("utf-8")
+                if message == "heartbeat" and addr in self.peers:
+                    print(f"Heartbeat received from {addr}")
+                    self.last_heartbeat[addr] = time.time()
             except Exception as e:
-                print(f"Error handling client {addr}: {e}")
-                break
-        conn.close()
-        print(f"Disconnected from {addr}\n")
+                print(f"Error receiving heartbeat: {e}")
 
-    def process_message(self, message, conn):
-        """Process incoming messages based on their type."""
-        message_type = message.get("type")
-
-        if message_type == "publish":
-            self.handle_publish_message(message, conn)
-        elif message_type == "subscribe":
-            self.handle_subscribe_message(message, conn)
-        elif message_type == "gossip":
-            self.handle_gossip_message(message)
-        elif message_type == "election":
-            self.handle_election_message(message, conn)
-        elif message_type == "coordinator":
-            self.handle_coordinator_message(message)
-
-    def handle_election_message(self, message, conn):
-        """Handle election messages."""
-        sender = message.get("sender")
-        print(f"Received election message from {sender}")
-
-        # Acknowledge receipt of the election message
-        response = {"type": "election_ack", "ack": True}
-        conn.send(json.dumps(response).encode('utf-8'))
-
-        # If the sender has lower priority, initiate a new election
-        if self.is_higher_priority(sender):
-            self.initiate_election()
-
-    def handle_coordinator_message(self, message):
-        """Handle coordinator announcements."""
-        self.coordinator = message.get("sender")
-        print(f"New coordinator is {self.coordinator}")
-        self.isCoordinator = (self.coordinator == (self.host, self.port))
-
-    def handle_publish_message(self, message, conn):
-        """Handle publish requests."""
-        topic = message.get("topic")
-        msg = message.get("message")
-        print(f"New data has been published - {self.host}:{self.port} initiating gossip")
-        self.topics[topic] = msg
-        self.update_database(topic, msg)
-
-        # Notify subscribers
-        if topic in self.subscribers:
-            for subscriber in self.subscribers[topic]:
+    def start_heartbeat_client(self):
+        """Send periodic heartbeat messages to peers."""
+        client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        while self.running:
+            for peer in self.peers:
                 try:
-                    subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg}).encode('utf-8'))
+                    client.sendto("heartbeat".encode("utf-8"), peer)
+                    print(f"Sent heartbeat to {peer}")
                 except Exception as e:
-                    print(f"Error notifying subscriber: {e}")
+                    print(f"Error sending heartbeat to {peer}: {e}")
+            time.sleep(HEARTBEAT_INTERVAL)
 
-        # Gossip this message to peers
-        self.gossip_message(topic, msg)
-
-    def handle_subscribe_message(self, message, conn):
-        """Handle subscription requests."""
-        topic = message.get("topic")
-        if topic not in self.subscribers:
-            self.subscribers[topic] = []
-        self.subscribers[topic].append(conn)
-        print(f"Subscriber added for topic: {topic}")
-
-    def handle_gossip_message(self, message):
-        """Handle gossip messages from other brokers."""
-        topic = message.get("topic")
-        msg = message.get("message")
-
-        # Check if the topic already exists in the database
-        if not self.is_message_in_database(topic, msg):
-            print(f"New data has arrived through gossip - {self.host}:{self.port} forwarding gossip")
-            self.topics[topic] = msg
-            self.update_database(topic, msg)
-
-            # Notify subscribers
-            if topic in self.subscribers:
-                for subscriber in self.subscribers[topic]:
-                    try:
-                        subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg}).encode('utf-8'))
-                    except Exception as e:
-                        print(f"Error notifying subscriber: {e}")
-
-            # Gossip the message further
-            self.gossip_message(topic, msg)
-        else:
-            print(f"Data already stored in DB - {self.host}:{self.port} already received gossip")
-
-    def is_message_in_database(self, topic, message):
-        """Check if the topic and message already exist in the database."""
-        try:
-            conn = sqlite3.connect(self.db_file)
-            cursor = conn.cursor()
-            cursor.execute("SELECT latest_message FROM topics WHERE topic = ?", (topic,))
-            row = cursor.fetchone()
-            conn.close()
-            return row is not None and row[0] == message
-        except Exception as e:
-            print(f"Database query failed: {e}")
-            return False
-
-    def update_database(self, topic, message):
-        """Update topic data in the database."""
-        try:
-            conn = sqlite3.connect(self.db_file)
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO topics (topic, latest_message)
-                VALUES (?, ?)
-            """, (topic, message))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"Database update failed: {e}")
-
-    def gossip_message(self, topic, message):
-        """Gossip a message to all peers."""
-        for peer in self.peers:
-            self.send_message(peer, {
-                "type": "gossip",
-                "topic": topic,
-                "message": message,
-            })
+    def detect_failures(self):
+        """Detect failed peers based on missed heartbeats."""
+        while self.running:
+            current_time = time.time()
+            for peer, last_time in self.last_heartbeat.items():
+                if current_time - last_time > FAILURE_THRESHOLD:
+                    print(f"Peer {peer} is considered failed. Triggering election.")
+                    if peer == self.coordinator:
+                        self.initiate_election()  # Trigger a new election if the leader fails
+            time.sleep(1)
 
     def send_message(self, peer, message):
         """Send a message to a peer."""
@@ -251,18 +162,6 @@ class Broker:
             s.close()
         except Exception as e:
             print(f"Failed to send message to {peer}: {e}")
-
-    def is_higher_priority(self, sender):
-        """Determine if this broker has higher priority than the sender."""
-        sender_host, sender_port = sender
-        return (self.host, self.port) > (sender_host, sender_port)
-
-    def shutdown(self):
-        """Gracefully shut down the broker server."""
-        if self.server:
-            print(f"Shutting down the broker server at {host}:{port}...")
-            self.server.close()
-            sys.exit(0)
 
     def start(self):
         """Start the broker server."""
@@ -277,7 +176,8 @@ class Broker:
         except Exception as e:
             print(f"{e}")
         finally:
-            self.shutdown()
+            self.running = False
+            server.close()
 
 
 if __name__ == "__main__":
