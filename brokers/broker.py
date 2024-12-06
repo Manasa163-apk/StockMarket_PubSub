@@ -114,7 +114,7 @@ class Broker:
                 "lamport_timestamp": self.lamport_timestamp
             })
         
-        print(f"Notified {len(self.peers)} brokers about new coordinator.")
+        print(f"Notifications sent out to {len(self.peers)} brokers about new coordinator.")
         print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
 
     def handle_client(self, conn, addr):
@@ -273,7 +273,7 @@ class Broker:
             s.send(json.dumps(message).encode('utf-8'))
             s.close()
         except Exception as e:
-            print(f"Failed to send message to {peer}: {e}\n")
+            # print(f"Failed to send message to {peer}: {e}\n")
 
     def is_higher_priority(self, sender):
         """Determine if this broker has higher priority than the sender."""
