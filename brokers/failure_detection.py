@@ -45,8 +45,7 @@ class Broker:
         """
         Periodically sends heartbeat messages to peer brokers.
         """
-        client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        client.bind(("0.0.0.0", self.broker_port))  # Bind to the broker's own port
+        client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # No need to bind here
         while self.running:
             for peer_ip, peer_port in self.peer_brokers:
                 try:
@@ -100,5 +99,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         broker.running = False
         print("Broker shutting down...")
-
-
