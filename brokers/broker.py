@@ -117,7 +117,7 @@ class Broker:
 
     def handle_client(self, conn, addr):
         """Handle incoming client connections."""
-        print(f"Connected to {addr}")
+        # print(f"Connected to {addr}")
         while True:
             try:
                 data = conn.recv(1024)
@@ -129,7 +129,7 @@ class Broker:
                 print(f"Error handling client {addr}: {e}")
                 break
         conn.close()
-        print(f"Disconnected from {addr}\n")
+        # print(f"Disconnected from {addr}\n")
 
     def process_message(self, message, conn):
         """Process incoming messages based on their type."""
