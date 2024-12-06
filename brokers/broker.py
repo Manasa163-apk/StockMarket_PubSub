@@ -89,7 +89,7 @@ class Broker:
         for thread in threads:
             thread.join()
 
-        print(f"Election messages sent by {self.host}:{self.port}")
+        print(f"Election messages sent to {len(higher_priority_peers)} peer(s) by {self.host}:{self.port}")
         print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         if not responses:
             # No responses, elect self as coordinator
