@@ -297,6 +297,7 @@ class Broker:
             return False
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(3)
             s.connect(self.coordinator)
             s.close()
             return True
