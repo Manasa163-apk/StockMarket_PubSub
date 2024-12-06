@@ -1,46 +1,35 @@
 import socket
-import tkinter as tk
-import pickle
+import json
+import time
+import argparse
 
 
-def publish_message():
-    topic = topic_entry.get()
-    message = message_entry.get()
-    if topic and message:
+class Publisher:
+    def __init__(self, broker_host, broker_port):
+        self.broker_host = broker_host
+        self.broker_port = broker_port
+
+    def publish(self, topic, message):
+        """Publish a message to a topic."""
         try:
-            data = {"action": "publish", "topic": topic, "content": message}
-            client.send(pickle.dumps(data))
-            status_label.config(text=f"Message published to topic '{topic}'")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                print(f"Connecting to broker at {self.broker_host}:{self.broker_port}...")
+                s.connect((self.broker_host, self.broker_port))
+                print(f"Connected. Publishing to topic '{topic}'...")
+                data = {"type": "publish", "topic": topic.lower(), "message": message}
+                s.send(json.dumps(data).encode('utf-8'))  # Send data as JSON string
         except Exception as e:
-            status_label.config(text=f"Error publishing message: {e}")
-
-
-def setup_client():
-    global client
-    try:
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(("127.0.0.1", 6000))  # Use correct port (6000)
-    except Exception as e:
-        print(f"Error connecting to broker: {e}")
-        exit()
+            print(f"Error publishing message: {e}")
 
 
 if __name__ == "__main__":
-    setup_client()
+    parser = argparse.ArgumentParser(description="Run the Publisher client.")
+    parser.add_argument('--host', type=str, required=True, help="Broker host address (e.g., 'localhost').")
+    parser.add_argument('--port', type=int, required=True, help="Broker port number (e.g., 2000).")
+    parser.add_argument('--topic', type=str, default="stocks", help="Topic to publish to (default: 'stocks').")
+    
+    args = parser.parse_args()
 
-    root = tk.Tk()
-    root.title("Publisher")
-
-    tk.Label(root, text="Topic:").pack()
-    topic_entry = tk.Entry(root)
-    topic_entry.pack()
-
-    tk.Label(root, text="Message:").pack()
-    message_entry = tk.Entry(root)
-    message_entry.pack()
-
-    tk.Button(root, text="Publish", command=publish_message).pack()
-    status_label = tk.Label(root, text="")
-    status_label.pack()
-
-    root.mainloop()
+    publisher = Publisher(args.host, args.port)
+    message = f"Stock update at {time.ctime()}"
+    publisher.publish(args.topic, message)
