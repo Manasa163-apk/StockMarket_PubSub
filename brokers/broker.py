@@ -20,6 +20,8 @@ class Broker:
 
         # Trigger leader election upon deployment
         threading.Thread(target=self.initiate_election, daemon=True).start()
+        time.sleep(1)
+        threading.Thread(target=self.monitor_coordinator, daemon=True).start()
 
     def load_peers(self, global_state_file):
         """Load peers from the provided CSV file."""
@@ -277,6 +279,27 @@ class Broker:
         """Determine if this broker has higher priority than the sender."""
         sender_host, sender_port = sender
         return (self.host, self.port) > (sender_host, sender_port)
+
+    def monitor_coordinator(self):
+        """Monitor the coordinator's health."""
+        while True:
+            if not self.isCoordinator:
+                if not self.is_coordinator_alive():
+                    print("Coordinator down! Starting election.")
+                    self.initiate_election()
+            time.sleep(5)
+
+    def is_coordinator_alive(self):
+        """Check if the coordinator is alive."""
+        if not self.coordinator:
+            return False
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(self.coordinator)
+            s.close()
+            return True
+        except Exception:
+            return False
 
     def start(self):
         """Start the broker server."""
