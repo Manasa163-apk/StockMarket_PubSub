@@ -209,6 +209,7 @@ class Broker:
         # Check if the topic already exists in the database
         if not self.is_message_in_database(topic, msg):
             print(f"New data has arrived through gossip - {self.host}:{self.port} forwarding gossip")
+            self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp)
             self.topics[topic] = msg
             self.update_database(topic, msg)
 
@@ -259,6 +260,7 @@ class Broker:
                 "type": "gossip",
                 "topic": topic,
                 "message": message,
+                "lamport_timestamp": self.lamport_timestamp
             })
 
     def send_message(self, peer, message):
