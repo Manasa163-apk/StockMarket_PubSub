@@ -103,7 +103,7 @@ class Broker:
 
         # Notify all peers
         for peer in self.peers:
-            lamport_timestamp += 1
+            self.lamport_timestamp += 1
             self.send_message(peer, {
                 "type": "coordinator",
                 "sender": (self.host, self.port),
