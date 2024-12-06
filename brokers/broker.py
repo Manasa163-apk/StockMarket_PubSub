@@ -119,7 +119,7 @@ class Broker:
                 print(f"Error handling client {addr}: {e}")
                 break
         conn.close()
-        print(f"Disconnected from {addr}")
+        print(f"Disconnected from {addr}\n")
 
     def process_message(self, message, conn):
         """Process incoming messages based on their type."""
