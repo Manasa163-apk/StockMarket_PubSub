@@ -1,169 +1,141 @@
-Here is a detailed **README.md** file for your project:
 
----
+# **Pub-Sub System with Gossip Protocol and Long Polling**
 
-# Publish-Subscribe System
-
-This is a basic implementation of a **Publish-Subscribe System** using Python, where:
-- **Broker** acts as an intermediary to manage topics and route messages between publishers and subscribers.
-- **Publisher** sends messages to specific topics.
-- **Subscriber** listens for messages from topics it subscribes to.
-
-## Features
-- Real-time messaging between publishers and subscribers.
-- Flexible architecture supporting multiple publishers and subscribers.
-- Easy-to-use interface with `tkinter`.
-
----
-
-## Requirements
-
-Ensure you have the following installed:
-- Python 3.8 or higher
-- `tkinter` (pre-installed with Python on most systems)
-- Basic knowledge of sockets and threading.
-
----
-
-## File Structure
+## **Project Structure**
 
 ```
 .
-├── broker/
-│   ├── __init__.py          # Initializes the broker module
-│   └── broker.py            # Broker implementation
-├── publisher/
-│   ├── __init__.py          # Initializes the publisher module
-│   └── publisher.py         # Publisher client with GUI
-├── subscriber/
-│   ├── __init__.py          # Initializes the subscriber module
-│   └── subscriber.py        # Subscriber client with GUI
-|__stock_data.py
-└── README.md          # Project documentation
+├── broker.py        # Broker code to manage topics, subscriptions, and handle gossip protocol
+├── subscriber.py    # Subscriber code that subscribes to topics using long polling
+├── publisher.py     # Publisher code to publish messages to topics
+└── broker.db        # SQLite database file for storing topics and messages
 ```
 
----
+## **Steps to Run the Code**
 
-## Setup Instructions
+1. **Install Dependencies**:
+   - Ensure you have Python installed on your machine.
+   - This project uses only the standard Python library, so no additional packages are required.
 
-### 1. Clone the Repository
+2. **Running the Brokers**:
+   - **Broker 1**:
+     Open a terminal and run the first broker:
+     ```bash
+     cd brokers
+     python3 broker.py --host localhost --port 3000 --peers localhost:3001
+     ```
+   
+   - **Broker 2**:
+     Open another terminal and run the second broker:
+     ```bash
+     cd brokers
+     python3 broker.py --host localhost --port 3001 --peers localhost:3000
+     ```
 
-```bash
-git clone <repository-url>
-cd <project-directory>
-```
+   - This starts two brokers that will synchronize topics and messages using the **gossip protocol**.
 
-### 2. Run the Broker
+   Understanding Peer Connections
 
-Start the broker to manage connections and topics:
-```bash
-python broker.py
-```
+	•	The --peers argument specifies the list of peer brokers in the format host:port.
+	•	When the broker starts, it attempts to gossip with these peers.
 
-The broker will start on `127.0.0.1:5000` by default.
-
----
-
-## Running Clients
-
-### 1. Publisher
-
-Launch the publisher to send messages:
-```bash
-python3 publisher.py
-```
-
-**Steps**:
-1. Enter the topic name in the **"Topic"** field.
-2. Enter the message in the **"Message"** field.
-3. Click **Publish** to send the message to the broker.
-
-### 2. Subscriber
-
-Launch the subscriber to receive messages:
-```bash
-python3 subscriber.py
-```
-
-**Steps**:
-1. Enter the topic name in the **"Topic"** field.
-2. Click **Subscribe** to subscribe to the topic.
-3. Messages from the subscribed topic will appear in the text area.
-
----
-
-## Example Workflow
-
-1. **Start the Broker**:
    ```bash
-   python3 broker.py
+   python3 broker.py --host 192.168.1.10 --port 3000 --peers 192.168.1.11:3001 203.0.113.5:3002
    ```
 
-2. **Run a Subscriber**:
-   - Subscribe to a topic, e.g., `stocks`.
 
-3. **Run a Publisher**:
-   - Publish a message to the topic `stocks`.
 
-4. **Message Flow**:
-   - The subscriber receives the message for the topic `stocks`.
 
----
 
-## Expected Output
+3. **Running the Subscriber**:
+   Open a new terminal and run the subscriber:
+   ```bash
+   python3 subscriber.py
+   ```
+   - The subscriber will prompt you to enter a topic to subscribe to. It will then wait for updates from the broker.
 
-### Subscriber Window
-```
-Topic: stocks
-[stocks] Tesla shares up 5%
-```
+4. **Running the Publisher**:
+   Open another terminal and run the publisher:
+   ```bash
+   python3 publisher.py
+   ```
+   - The publisher will prompt you to enter a topic and message. It will then publish the message to the broker, which will broadcast it to all subscribers.
 
-### Publisher Status
-```
-Message published to topic 'stocks'
-```
+## **Features Implemented**
 
-### Broker Logs
-```
-New connection from ('127.0.0.1', 60000)
-Client subscribed to topic: stocks
-Message published to topic: stocks
-```
+### **Multiple Brokers**:
+- The system supports **multiple brokers** to allow for greater scalability and fault tolerance.
+- Brokers run independently on different ports and can communicate with each other to synchronize their state using the **gossip protocol**.
+- Each broker can have multiple **subscribers** and **publishers**, and they all share topics and messages.
 
----
+### **Gossip Protocol**:
+- The **gossip protocol** allows brokers to **synchronize topics** and their corresponding messages across different brokers.
+- Brokers periodically **gossip** with other brokers, exchanging information about their topics and messages.
+- If a broker has a more recent version of a topic, it synchronizes its state with the peer broker.
+- This ensures that **all brokers** have the same up-to-date version of topics and messages, even if a message was published on a different broker.
 
-## Troubleshooting
+#### **How Gossip Protocol Works**:
+1. Each broker maintains a list of **peers** (other brokers it communicates with).
+2. Every broker **periodically gossips** with its peers by sending a **sync message** that includes the current state of its topics.
+3. If a broker receives a **new topic** or a **more recent message** for a topic, it updates its local state.
+4. This process allows for eventual consistency between brokers.
 
-### 1. Ports Already in Use
-If the port `8000` is busy, modify the broker code to use a different port:
-```python
-broker = Broker("127.0.0.1", <NEW_PORT>)
-```
-Update the `setup_client()` method in both `publisher.py` and `subscriber.py`:
-```python
-client.connect(("127.0.0.1", <NEW_PORT>))
-```
+### **Long Polling**:
+- **Long polling** is used to allow **subscribers** to receive updates for a topic in real-time.
+- When a subscriber subscribes to a topic, the broker keeps the connection open until a new message is available for that topic.
+- If a new message is published for a subscribed topic, the broker sends it to the subscriber.
+- The subscriber remains connected and continues to receive updates as long as they remain subscribed.
 
-### 2. Messages Not Received
-Ensure:
-- The broker is running.
-- The publisher and subscriber are connected to the same broker.
+#### **How Long Polling Works**:
+1. The **subscriber** sends a request to the broker to subscribe to a topic.
+2. The broker keeps the connection open and waits for a message to be published for the subscribed topic.
+3. Once a new message is published, the broker sends the message to the waiting subscriber.
+4. The subscriber receives the message and can continue to wait for further updates.
 
----
-
-## Enhancements
-
-- **Logging**: Add logs to track connections and message flow.
-- **Persistence**: Store messages for offline subscribers.
-- **Advanced Topics**: Add support for topic wildcards and patterns.
+### **Database**:
+- The system uses **SQLite** to store and persist topics and their corresponding messages in a database file called `broker.db`.
+- **Broker Database**: The broker maintains a SQLite database where it stores all the topics and their latest messages. When a new message is published, the broker updates the database to ensure data persistence.
+- The database is especially useful for recovering the state of topics in case the broker restarts. Upon startup, the broker loads the topics and their messages from the database into memory, ensuring that subscribers receive the correct information.
 
 ---
 
-## License
-This project is licensed under the MIT License.
+## **Usage Example**
 
-Enjoy using this real-time messaging system! 🎉
+1. **Start Broker 1**:
+   ```bash
+   cd brokers
+   python3 broker.py --host localhost --port 2000 --peers localhost:2001
+   ```
 
---- 
+2. **Start Broker 2**:
+   ```bash
+   cd brokers
+   python3 broker.py --host localhost --port 2001 --peers localhost:2000
+   ```
 
-Copy this `README.md` file into your project directory for easy reference.
+3. **Start Subscriber**:
+   ```bash
+   cd subscribers
+   python3 subscriber.py
+   ```
+   You will be prompted to subscribe to a topic (e.g., `news`).
+
+4. **Start Publisher**:
+   ```bash
+   cd publishers
+   python3 publisher.py
+   ```
+   Enter a topic and message, and the message will be sent to the broker and broadcasted to all subscribers.
+
+---
+
+## **Author**:
+**Manasa Deshagouni**
+
+---
+
+### **Additional Notes**:
+
+- **Gossip Protocol** ensures that all brokers stay synchronized with the latest messages and topics, so even if one broker is down, the others will have consistent data.
+- **Long Polling** provides real-time communication between the broker and subscribers, so subscribers get updates as soon as they are available.
+

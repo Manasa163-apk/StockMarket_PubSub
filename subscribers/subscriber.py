@@ -1,60 +1,38 @@
 import socket
-import threading
-import tkinter as tk
-import pickle
+import json
+import argparse
 
 
-def subscribe_to_topic():
-    topic = topic_entry.get()
-    if topic:
+class Subscriber:
+    def __init__(self, broker_host, broker_port):
+        self.broker_host = broker_host
+        self.broker_port = broker_port
+
+    def subscribe(self, topic):
+        """Subscribe to a topic and print updates."""
         try:
-            data = {"action": "subscribe", "topic": topic}
-            client.send(pickle.dumps(data))
-            status_label.config(text=f"Subscribed to topic '{topic}'")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                print(f"Connecting to broker at {self.broker_host}:{self.broker_port}...")
+                s.connect((self.broker_host, self.broker_port))
+                print(f"Connected. Subscribing to topic '{topic}'...")
+                data = {"type": "subscribe", "topic": topic.lower()}
+                s.send(json.dumps(data).encode('utf-8'))  # Send data as JSON string
+                while True:
+                    message_data = s.recv(1024)
+                    if message_data:
+                        message = json.loads(message_data.decode('utf-8'))  # Decode and parse JSON
+                        print(f"Update on '{message['topic']}': {message['message']}")
         except Exception as e:
-            status_label.config(text=f"Error subscribing to topic: {e}")
-
-
-def receive_messages():
-    while True:
-        try:
-            data = client.recv(1024)
-            if not data:
-                break
-            message = pickle.loads(data)
-            print(f"Received message: {message}")  # Debugging
-            display_area.insert(tk.END, f"[{message['topic']}] {message['content']}\n")
-        except Exception as e:
-            print(f"Error receiving message: {e}")
-            break
-
-
-def setup_client():
-    global client
-    try:
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(("127.0.0.1", 6000))  # Use correct port (6000)
-        threading.Thread(target=receive_messages, daemon=True).start()
-    except Exception as e:
-        print(f"Error connecting to broker: {e}")
-        exit()
+            print(f"Error subscribing to topic: {e}")
 
 
 if __name__ == "__main__":
-    setup_client()
-
-    root = tk.Tk()
-    root.title("Subscriber")
-
-    tk.Label(root, text="Topic:").pack()
-    topic_entry = tk.Entry(root)
-    topic_entry.pack()
-
-    tk.Button(root, text="Subscribe", command=subscribe_to_topic).pack()
-    status_label = tk.Label(root, text="")
-    status_label.pack()
-
-    display_area = tk.Text(root, height=15, width=50)
-    display_area.pack()
-
-    root.mainloop()
+    parser = argparse.ArgumentParser(description="Run the Subscriber client.")
+    parser.add_argument('--host', type=str, required=True, help="Broker host address (e.g., 'localhost').")
+    parser.add_argument('--port', type=int, required=True, help="Broker port number (e.g., 2001).")
+    parser.add_argument('--topic', type=str, default="stocks", help="Topic to subscribe to (default: 'stocks').")
+    
+    args = parser.parse_args()
+    
+    subscriber = Subscriber(args.host, args.port)
+    subscriber.subscribe(args.topic)
