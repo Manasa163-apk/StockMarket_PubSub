@@ -273,6 +273,7 @@ class Broker:
             s.send(json.dumps(message).encode('utf-8'))
             s.close()
         except Exception as e:
+            pass
             # print(f"Failed to send message to {peer}: {e}\n")
 
     def is_higher_priority(self, sender):
