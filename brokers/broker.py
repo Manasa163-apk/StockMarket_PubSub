@@ -51,12 +51,13 @@ class Broker:
             conn.close()
             print("Database initialized.")
         except Exception as e:
-            print(f"Database initialization failed: {e}")
+            print(f"Database initialization failed: {e}\n")
 
     def initiate_election(self):
         """Initiate the leader election process."""
         print(f"Broker at {self.host}:{self.port} initiating election.")
         self.lamport_timestamp += 1
+        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         higher_priority_peers = [
             peer for peer in self.peers
             if (peer[0], peer[1]) > (self.host, self.port)
@@ -75,7 +76,7 @@ class Broker:
                 responses.append(json.loads(response.decode('utf-8')))
                 s.close()
             except Exception as e:
-                print(f"Failed to communicate with peer {peer}: {e}")
+                print(f"Failed to communicate with peer {peer}: {e}\n")
 
         # Send election messages to higher-priority peers
         threads = []
@@ -89,6 +90,8 @@ class Broker:
         for thread in threads:
             thread.join()
 
+        print(f"Election messages sent by {self.host}:{self.port}")
+        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         if not responses:
             # No responses, elect self as coordinator
             self.announce_coordinator()
@@ -109,6 +112,9 @@ class Broker:
                 "sender": (self.host, self.port),
                 "lamport_timestamp": self.lamport_timestamp
             })
+        
+        print(f"Notified all brokers about new coordinator.")
+        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
 
     def handle_client(self, conn, addr):
         """Handle incoming client connections."""
@@ -146,6 +152,7 @@ class Broker:
         sender = message.get("sender")
         self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp) + 1
         print(f"Received election message from {sender}")
+        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
 
         # Acknowledge receipt of the election message
         response = {"type": "election_ack", "ack": True}
@@ -160,6 +167,7 @@ class Broker:
         self.coordinator = message.get("sender")
         self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp) + 1
         print(f"New coordinator is {self.coordinator}")
+        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         self.isCoordinator = (self.coordinator == (self.host, self.port))
 
     def handle_publish_message(self, message, conn):
@@ -168,6 +176,7 @@ class Broker:
         msg = message.get("message")
         self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp) + 1
         print(f"New data has been published - {self.host}:{self.port} initiating gossip")
+        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         self.topics[topic] = msg
         self.update_database(topic, msg)
 
@@ -190,6 +199,7 @@ class Broker:
             self.subscribers[topic] = []
         self.subscribers[topic].append(conn)
         print(f"Subscriber added for topic: {topic}")
+        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
 
     def handle_gossip_message(self, message):
         """Handle gossip messages from other brokers."""
@@ -259,7 +269,7 @@ class Broker:
             s.send(json.dumps(message).encode('utf-8'))
             s.close()
         except Exception as e:
-            print(f"Failed to send message to {peer}: {e}")
+            print(f"Failed to send message to {peer}: {e}\n")
 
     def is_higher_priority(self, sender):
         """Determine if this broker has higher priority than the sender."""
@@ -280,7 +290,7 @@ class Broker:
             print(f"{e}")
         finally:
             """Gracefully shut down the broker server."""
-            print(f"Shutting down the broker server at {host}:{port}...")
+            print(f"Shutting down the broker server at {self.host}:{self.port}...")
             server.close()
             sys.exit(0)
 
