@@ -16,6 +16,7 @@ class Broker:
         self.isCoordinator = False  # Leader election flag
         self.coordinator = None  # Tracks the current coordinator
         self.db_file = "broker.db"  # SQLite database file
+        self.lamport_timestamp = 0
         self.init_database()
 
         # Trigger leader election upon deployment
@@ -55,6 +56,7 @@ class Broker:
     def initiate_election(self):
         """Initiate the leader election process."""
         print(f"Broker at {self.host}:{self.port} initiating election.")
+        self.lamport_timestamp += 1
         higher_priority_peers = [
             peer for peer in self.peers
             if (peer[0], peer[1]) > (self.host, self.port)
@@ -66,7 +68,7 @@ class Broker:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.connect(peer)
-                message = {"type": "election", "sender": (self.host, self.port)}
+                message = {"type": "election", "sender": (self.host, self.port), "lamport_timestamp": self.lamport_timestamp}
                 s.send(json.dumps(message).encode('utf-8'))
                 s.settimeout(5)
                 response = s.recv(1024)
@@ -78,6 +80,7 @@ class Broker:
         # Send election messages to higher-priority peers
         threads = []
         for peer in higher_priority_peers:
+            self.lamport_timestamp += 1
             thread = threading.Thread(target=send_election, args=(peer,))
             threads.append(thread)
             thread.start()
@@ -100,9 +103,11 @@ class Broker:
 
         # Notify all peers
         for peer in self.peers:
+            lamport_timestamp += 1
             self.send_message(peer, {
                 "type": "coordinator",
                 "sender": (self.host, self.port),
+                "lamport_timestamp": self.lamport_timestamp
             })
 
     def handle_client(self, conn, addr):
@@ -139,6 +144,7 @@ class Broker:
     def handle_election_message(self, message, conn):
         """Handle election messages."""
         sender = message.get("sender")
+        self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp) + 1
         print(f"Received election message from {sender}")
 
         # Acknowledge receipt of the election message
@@ -152,6 +158,7 @@ class Broker:
     def handle_coordinator_message(self, message):
         """Handle coordinator announcements."""
         self.coordinator = message.get("sender")
+        self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp) + 1
         print(f"New coordinator is {self.coordinator}")
         self.isCoordinator = (self.coordinator == (self.host, self.port))
 
@@ -159,6 +166,7 @@ class Broker:
         """Handle publish requests."""
         topic = message.get("topic")
         msg = message.get("message")
+        self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp) + 1
         print(f"New data has been published - {self.host}:{self.port} initiating gossip")
         self.topics[topic] = msg
         self.update_database(topic, msg)
@@ -167,7 +175,7 @@ class Broker:
         if topic in self.subscribers:
             for subscriber in self.subscribers[topic]:
                 try:
-                    subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg}).encode('utf-8'))
+                    subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg, "lamport_timestamp": self.lamport_timestamp}).encode('utf-8'))
                 except Exception as e:
                     print(f"Error notifying subscriber: {e}")
 
@@ -177,6 +185,7 @@ class Broker:
     def handle_subscribe_message(self, message, conn):
         """Handle subscription requests."""
         topic = message.get("topic")
+        self.lamport_timestamp += 1
         if topic not in self.subscribers:
             self.subscribers[topic] = []
         self.subscribers[topic].append(conn)
@@ -197,7 +206,7 @@ class Broker:
             if topic in self.subscribers:
                 for subscriber in self.subscribers[topic]:
                     try:
-                        subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg}).encode('utf-8'))
+                        subscriber.send(json.dumps({"type": "publish", "topic": topic, "message": msg, "lamport_timestamp": self.lamport_timestamp}).encode('utf-8'))
                     except Exception as e:
                         print(f"Error notifying subscriber: {e}")
 

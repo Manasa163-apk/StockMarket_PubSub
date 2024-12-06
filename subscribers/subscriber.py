@@ -7,6 +7,7 @@ class Subscriber:
     def __init__(self, broker_host, broker_port):
         self.broker_host = broker_host
         self.broker_port = broker_port
+        self.lamport_timestamp = 0
 
     def subscribe(self, topic):
         """Subscribe to a topic and print updates."""
@@ -15,13 +16,16 @@ class Subscriber:
                 print(f"Connecting to broker at {self.broker_host}:{self.broker_port}...")
                 s.connect((self.broker_host, self.broker_port))
                 print(f"Connected. Subscribing to topic '{topic}'...")
-                data = {"type": "subscribe", "topic": topic.lower()}
+                self.lamport_timestamp += 1
+                data = {"type": "subscribe", "topic": topic.lower(), "lamport_timestamp": self.lamport_timestamp}
                 s.send(json.dumps(data).encode('utf-8'))  # Send data as JSON string
                 while True:
                     message_data = s.recv(1024)
                     if message_data:
                         message = json.loads(message_data.decode('utf-8'))  # Decode and parse JSON
                         print(f"Update on '{message['topic']}': {message['message']}")
+                        self.lamport_timestamp = max(message['lamport_timestamp'], self.lamport_timestamp) + 1
+                        print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         except Exception as e:
             print(f"Error subscribing to topic: {e}")
 

@@ -8,6 +8,7 @@ class Publisher:
     def __init__(self, broker_host, broker_port):
         self.broker_host = broker_host
         self.broker_port = broker_port
+        self.lamport_timestamp = 0
 
     def publish(self, topic, message):
         """Publish a message to a topic."""
@@ -16,8 +17,10 @@ class Publisher:
                 print(f"Connecting to broker at {self.broker_host}:{self.broker_port}...")
                 s.connect((self.broker_host, self.broker_port))
                 print(f"Connected. Publishing to topic '{topic}'...")
-                data = {"type": "publish", "topic": topic.lower(), "message": message}
+                self.lamport_timestamp += 1
+                data = {"type": "publish", "topic": topic.lower(), "message": message, "lamport_timestamp": self.lamport_timestamp}
                 s.send(json.dumps(data).encode('utf-8'))  # Send data as JSON string
+                print(f"Publishing data:\n{data}\n")
         except Exception as e:
             print(f"Error publishing message: {e}")
 
