@@ -77,7 +77,8 @@ class Broker:
                 responses.append(json.loads(response.decode('utf-8')))
                 s.close()
             except Exception as e:
-                print(f"Failed to communicate with peer {peer}: {e}\n")
+                pass
+                # print(f"Failed to communicate with peer {peer}: {e}\n")
 
         # Send election messages to higher-priority peers
         threads = []
@@ -91,7 +92,7 @@ class Broker:
         for thread in threads:
             thread.join()
 
-        print(f"Election messages sent to {len(higher_priority_peers)} broker(s) by {self.host}:{self.port}")
+        print(f"Election messages sent to {len(higher_priority_peers)} higher id broker(s) by {self.host}:{self.port}")
         print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
         if not responses:
             # No responses, elect self as coordinator
