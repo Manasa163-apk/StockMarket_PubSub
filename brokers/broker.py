@@ -306,7 +306,7 @@ class Broker:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(('0.0.0.0', self.port))
         server.listen(5)
-        print(f"Broker running on {self.host}:{self.port}")
+        # print(f"Broker running on {self.host}:{self.port}")
         try:
             while True:
                 conn, addr = server.accept()
