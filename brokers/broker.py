@@ -153,6 +153,12 @@ class Broker:
                         self.initiate_election()  # Trigger a new election if the leader fails
             time.sleep(1)
 
+    def handle_coordinator_message(self, message):
+        """Handle coordinator announcements."""
+        self.coordinator = message.get("sender")
+        print(f"New coordinator is {self.coordinator}")
+        self.isCoordinator = (self.coordinator == (self.host, self.port))
+
     def process_message(self, message, conn):
         """Process incoming messages based on their type."""
         message_type = message.get("type")
