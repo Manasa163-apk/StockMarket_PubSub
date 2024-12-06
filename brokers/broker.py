@@ -209,7 +209,8 @@ class Broker:
         # Check if the topic already exists in the database
         if not self.is_message_in_database(topic, msg):
             print(f"New data has arrived through gossip - {self.host}:{self.port} forwarding gossip")
-            self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp)
+            self.lamport_timestamp = max(message.get("lamport_timestamp"), self.lamport_timestamp) + 1
+            print(f"Lamport Timestamp: {self.lamport_timestamp}\n")
             self.topics[topic] = msg
             self.update_database(topic, msg)
 
