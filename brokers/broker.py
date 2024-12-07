@@ -282,7 +282,7 @@ class Broker:
         sender_host, sender_port = sender
         return (self.host, self.port) > (sender_host, sender_port)
 
-     def monitor_coordinator(self):
+    def monitor_coordinator(self):
         """Monitor the coordinator's health."""
         while True:
             if not self.isCoordinator:
